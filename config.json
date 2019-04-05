@@ -1,0 +1,6 @@
+[{
+     "comment":"Refreshing cookie for duongdang",
+     "schedule":"* 0 * * *",
+     "command":"python3 -m crons.refresh_cookie",
+     "onstart":true
+ }]
