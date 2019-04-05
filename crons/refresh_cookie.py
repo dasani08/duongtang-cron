@@ -41,7 +41,8 @@ def refresh_cookie(cookie_str):
     in responsed headers, then the current cookie will be regconized
     as expired, and be set to null
     """
-    if r.headers.get('content-location') != 'https://myaccount.google.com/':
+    location = r.headers.get('content-location')
+    if location is not None and location != 'https://myaccount.google.com/':
         return None
 
     set_cookie_dict = parse_cookie(r.headers.get('set-cookie'))
