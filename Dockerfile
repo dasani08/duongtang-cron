@@ -1,15 +1,24 @@
-FROM willfarrell/crontab
+FROM python:3.7-alpine3.9
 
-RUN apk add --no-cache \
-    python3 \
-    python3-dev \
-    && pip3 install --upgrade pip setuptools
-
-WORKDIR /app
+RUN apk update && apk add tzdata &&\
+    cp /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime &&\ 
+    echo "Asia/Ho_Chi_Minh" > /etc/timezone &&\ 
+    apk del tzdata && rm -rf /var/cache/apk/*
 
 COPY requirement.txt requirement.txt
-RUN pip3 install -r requirement.txt
+RUN apk add --virtual .build-deps \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    openssl-dev \
+    && pip install cryptography==2.2.2 \ 
+    && pip install --no-cache-dir -r requirement.txt \
+    && apk del .build-deps
 
-COPY . /app
+# COPY requirement.txt requirement.txt
+# RUN pip install -r requirement.txt
 
-COPY config.json ${HOME_DIR}/
+COPY app.py /app/app.py
+COPY crons /etc/crontabs/root
+CMD chown root:root /etc/crontabs/root
+CMD ["crond", "-f"]

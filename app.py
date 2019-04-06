@@ -1,14 +1,55 @@
+import os
 import requests
 import logging
+from datetime import datetime
+from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy import create_engine
+from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy.ext.declarative import declarative_base
 
-from core.db import get_engine_session
-from models import Config
-
+"""
+Logging configuration
+"""
 LOG_FORMAT = ('%(levelname) -10s %(asctime)s %(name) -30s %(funcName) '
               '-35s %(lineno) -5d: %(message)s')
 LOGGER = logging.getLogger(__name__)
 
-session = get_engine_session()
+"""
+Initialize db connection
+"""
+env = os.environ
+SQLALCHEMY_DATABASE_URI = env.get(
+    'SQLALCHEMY_DATABASE_URI',
+    'mysql+pymysql://root:duongtang2019@127.0.0.1/duongtang?charset=utf8')
+SQLALCHEMY_POOL_RECYCLE = env.get('SQLALCHEMY_POOL_RECYCLE', 500)
+
+
+# Factory method returning a db session scoped
+Session = sessionmaker()
+engine = create_engine(SQLALCHEMY_DATABASE_URI,
+                       pool_recycle=SQLALCHEMY_POOL_RECYCLE)
+Session.configure(bind=engine)
+session = scoped_session(Session)
+
+
+"""
+SQLAlchemy model
+"""
+Base = declarative_base()
+
+
+class Config(Base):
+    __tablename__ = 'configs'
+
+    ACTIVE_STATUS = 1
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(255), nullable=False)
+    value = Column(Text, nullable=False, default='')
+    group = Column(String(128), nullable=False)
+    expired_to = Column(Integer, nullable=False)
+    status = Column(Integer, default=ACTIVE_STATUS)
+    updated_date = Column(DateTime, onupdate=datetime.utcnow)
 
 
 def parse_cookie(cookie_str):
@@ -64,6 +105,7 @@ def main():
             continue
         LOGGER.info('Refreshing cookie for email {}'.format(cookie.group))
         refreshed_cookie = refresh_cookie(cookie.value)
+        print(refreshed_cookie)
         if refreshed_cookie is None:
             LOGGER.info(
                 'No refreshed cookie for email {}'.format(cookie.group))
