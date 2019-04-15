@@ -1,5 +1,7 @@
 FROM python:3.7-alpine3.9
 
+MAINTAINER thanh <thanh@clgt.vn>
+
 RUN apk update && apk add tzdata &&\
     cp /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime &&\ 
     echo "Asia/Ho_Chi_Minh" > /etc/timezone &&\ 
@@ -14,9 +16,6 @@ RUN apk add --virtual .build-deps \
     && pip install cryptography==2.2.2 \ 
     && pip install --no-cache-dir -r requirement.txt \
     && apk del .build-deps
-
-# COPY requirement.txt requirement.txt
-# RUN pip install -r requirement.txt
 
 COPY app.py /app/app.py
 COPY crons /etc/crontabs/root

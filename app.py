@@ -1,10 +1,13 @@
 import os
 import requests
 import logging
-from datetime import datetime
+import threading
+import concurrent.futures
+from time import time
+from datetime import datetime, date, timedelta
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy import create_engine
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, Date
 from sqlalchemy.ext.declarative import declarative_base
 
 """
@@ -42,6 +45,7 @@ class Config(Base):
     __tablename__ = 'configs'
 
     ACTIVE_STATUS = 1
+    INACTIVE_STATUS = 0
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     key = Column(String(255), nullable=False)
@@ -50,6 +54,7 @@ class Config(Base):
     expired_to = Column(Integer, nullable=False)
     status = Column(Integer, default=ACTIVE_STATUS)
     updated_date = Column(DateTime, onupdate=datetime.utcnow)
+    expires = Column(Date, nullable=True)
 
 
 def parse_cookie(cookie_str):
@@ -68,14 +73,22 @@ def serialize_cookie(cookie_dict):
     return ';'.join(cookies)
 
 
-def refresh_cookie(cookie_str):
+def get_cookie(cookie_str):
+
+    print("[{}] Getting cookie".format(threading.current_thread().name))
+
     request_url = 'https://myaccount.google.com/'
     r = requests.get(
         request_url,
         headers={
             'cookie': cookie_str,
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36'
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121'
+            'Safari/537.36'
         })
+
+    if r.status_code != 200:
+        return None, None
 
     """
     If the cookie is not authenticated, google will response with login url
@@ -83,39 +96,86 @@ def refresh_cookie(cookie_str):
     as expired, and be set to null
     """
     location = r.headers.get('content-location')
-    if location is not None and location != 'https://myaccount.google.com/':
-        return None
+    if location is not None and \
+            location.strip('/') != 'https://myaccount.google.com':
+        return None, None
 
-    set_cookie_dict = parse_cookie(r.headers.get('set-cookie'))
+    link = r.headers.get('link')
+    if link is not None:
+        return None, None
+
+    set_cookie = r.headers.get('set-cookie')
+    if set_cookie is None:
+        return None, None
+
+    set_cookie_dict = parse_cookie(set_cookie)
     cookie_dict = parse_cookie(cookie_str)
+    expires = datetime.strptime(
+        set_cookie_dict['expires'], '%a, %d-%b-%Y %H:%M:%S %Z')
 
     for key in set_cookie_dict.keys():
         if key in cookie_dict:
             cookie_dict[key] = set_cookie_dict[key]
 
-    return serialize_cookie(cookie_dict)
+    return (serialize_cookie(cookie_dict), expires)
+
+
+def refresh_cookie(cookies):
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=None, thread_name_prefix="duongtang") as thread_pool:
+        future_to_cookie = {thread_pool.submit(
+            get_cookie, cookie.value): cookie.group for cookie in cookies}
+        for future in concurrent.futures.as_completed(future_to_cookie):
+            email = future_to_cookie[future]
+            try:
+                (refreshed_cookie, expires) = future.result()
+            except Exception as exc:
+                print('{} generated an exception: {}'.format(email, exc))
+            else:
+                if refreshed_cookie is None:
+                    LOGGER.info(
+                        'No refreshed cookie for email: {}'.format(email))
+                    session.query(Config).filter_by(
+                        group=email, key='GMAIL_COOKIE').update({
+                            'status': Config.INACTIVE_STATUS
+                        })
+                else:
+                    session.query(Config).filter_by(
+                        group=email, key='GMAIL_COOKIE').update({
+                            'value': refreshed_cookie,
+                            'expires': expires.date()
+                        })
+                    LOGGER.info(
+                        'Refreshing cookie for email {} completed'.format(
+                            email))
+        session.commit()
+
+
+def execute_refresh():
+    while True:
+        PAGE_SIZE = 1000
+        # curr_date = date.today()
+        next_day = date.today() + timedelta(days=1)
+        try:
+            cookies = session.query(Config).filter_by(
+                key='GMAIL_COOKIE',
+                status=Config.ACTIVE_STATUS,
+                expires=next_day).limit(PAGE_SIZE).with_for_update().all()
+
+            if len(cookies) == 0:
+                raise Exception('All cookie was updated')
+
+            refresh_cookie(cookies)
+        except Exception as e:
+            LOGGER.info(e)
+            session.commit()
+            break
 
 
 def main():
-    cookies = session.query(Config).filter_by(
-        key='GMAIL_COOKIE', status=Config.ACTIVE_STATUS).all()
-    for cookie in cookies:
-        # Skip refreshing cookie if its value is null
-        if cookie.value is None:
-            continue
-        LOGGER.info('Refreshing cookie for email {}'.format(cookie.group))
-        refreshed_cookie = refresh_cookie(cookie.value)
-        print(refreshed_cookie)
-        if refreshed_cookie is None:
-            LOGGER.info(
-                'No refreshed cookie for email {}'.format(cookie.group))
-            continue
-        cookie.value = refreshed_cookie
-        session.add(cookie)
-    try:
-        session.commit()
-    except Exception as exc:
-        LOGGER.info("Updating cookie failed with detail {}".format(exc))
+    ts = time()
+    execute_refresh()
+    print('Took {}'.format(time() - ts))
 
 
 if __name__ == '__main__':
