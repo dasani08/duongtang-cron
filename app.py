@@ -160,7 +160,7 @@ def execute_refresh():
             cookies = session.query(Config).filter_by(
                 key='GMAIL_COOKIE',
                 status=Config.ACTIVE_STATUS).filter(
-                (Config.expires == None) | (Config.expires == next_day)
+                (Config.expires is None) | (Config.expires == next_day)
             ).limit(PAGE_SIZE).with_for_update().all()
 
             if len(cookies) == 0:
