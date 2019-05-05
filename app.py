@@ -135,10 +135,6 @@ def refresh_cookie(cookies):
                 if refreshed_cookie is None:
                     LOGGER.info(
                         'No refreshed cookie for email: {}'.format(email))
-                    session.query(Config).filter_by(
-                        group=email, key='GMAIL_COOKIE').update({
-                            'status': Config.INACTIVE_STATUS
-                        })
                 else:
                     session.query(Config).filter_by(
                         group=email, key='GMAIL_COOKIE').update({
