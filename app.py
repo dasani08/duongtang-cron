@@ -4,7 +4,7 @@ import logging
 import threading
 import concurrent.futures
 from time import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy import create_engine
 from sqlalchemy import Column, Integer, String, Text, DateTime, Date
@@ -34,6 +34,14 @@ engine = create_engine(SQLALCHEMY_DATABASE_URI,
 Session.configure(bind=engine)
 session = scoped_session(Session)
 
+"""
+Exception
+"""
+
+
+class CookieError(Exception):
+    pass
+
 
 """
 SQLAlchemy model
@@ -54,7 +62,7 @@ class Config(Base):
     expired_to = Column(Integer, nullable=False)
     status = Column(Integer, default=ACTIVE_STATUS)
     updated_date = Column(DateTime, onupdate=datetime.utcnow)
-    expires = Column(Date, nullable=True)
+    expires = Column(Integer, nullable=True)
 
 
 def parse_cookie(cookie_str):
@@ -75,7 +83,7 @@ def serialize_cookie(cookie_dict):
 
 def get_cookie(cookie_str):
 
-    print("[{}] Getting cookie".format(threading.current_thread().name))
+    LOGGER.info("[{}] Getting cookie".format(threading.current_thread().name))
 
     request_url = 'https://myaccount.google.com/'
     r = requests.get(
@@ -98,11 +106,11 @@ def get_cookie(cookie_str):
     location = r.headers.get('content-location')
     if location is not None and \
             location.strip('/') != 'https://myaccount.google.com':
-        return None, None
+        raise CookieError()
 
     link = r.headers.get('link')
     if link is not None:
-        return None, None
+        raise CookieError()
 
     set_cookie = r.headers.get('set-cookie')
     if set_cookie is None:
@@ -129,8 +137,12 @@ def refresh_cookie(cookies):
             email = future_to_cookie[future]
             try:
                 (refreshed_cookie, expires) = future.result()
-            except Exception as exc:
-                print('{} generated an exception: {}'.format(email, exc))
+            except CookieError:
+                LOGGER.info('Cookie of email {} is not valid'.format(email))
+                session.query(Config).filter_by(
+                    group=email, key='GMAIL_COOKIE').update({
+                        'status': Config.INACTIVE_STATUS
+                    })
             else:
                 if refreshed_cookie is None:
                     LOGGER.info(
@@ -139,7 +151,7 @@ def refresh_cookie(cookies):
                     session.query(Config).filter_by(
                         group=email, key='GMAIL_COOKIE').update({
                             'value': refreshed_cookie,
-                            'expires': expires.date()
+                            'expires': expires.timestamp()
                         })
                     LOGGER.info(
                         'Refreshing cookie for email {} completed'.format(
@@ -148,31 +160,26 @@ def refresh_cookie(cookies):
 
 
 def execute_refresh():
-    while True:
-        PAGE_SIZE = 1000
-        # curr_date = date.today()
-        next_day = date.today() + timedelta(days=1)
-        try:
-            cookies = session.query(Config).filter_by(
-                key='GMAIL_COOKIE',
-                status=Config.ACTIVE_STATUS).filter(
-                (Config.expires is None) | (Config.expires == next_day)
-            ).limit(PAGE_SIZE).with_for_update().all()
+    PAGE_SIZE = 1
+    next_hour = datetime.now() + timedelta(hours=1)
+    cookies = session.query(Config).filter_by(
+        key='GMAIL_COOKIE',
+        status=Config.ACTIVE_STATUS).filter(
+        (Config.expires == None) | (Config.expires < next_hour.timestamp())
+    ).order_by(
+        Config.expires.asc()
+    ).limit(PAGE_SIZE).with_for_update().all()
 
-            if len(cookies) == 0:
-                raise Exception('All cookie was updated')
-
-            refresh_cookie(cookies)
-        except Exception as e:
-            LOGGER.info(e)
-            session.commit()
-            break
+    if len(cookies) == 0:
+        LOGGER.info('All cookie was updated')
+    else:
+        refresh_cookie(cookies)
 
 
 def main():
     ts = time()
     execute_refresh()
-    print('Took {}'.format(time() - ts))
+    LOGGER.info('Took {}'.format(time() - ts))
 
 
 if __name__ == '__main__':
