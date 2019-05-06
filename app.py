@@ -85,7 +85,7 @@ def get_cookie(cookie_str):
 
     LOGGER.info("[{}] Getting cookie".format(threading.current_thread().name))
 
-    request_url = 'https://myaccount.google.com/'
+    request_url = 'https://photos.google.com/u/0/'
     r = requests.get(
         request_url,
         headers={
@@ -105,12 +105,11 @@ def get_cookie(cookie_str):
     """
     location = r.headers.get('content-location')
     if location is not None and \
-            location.strip('/') != 'https://myaccount.google.com':
+            location.strip('/') != 'http://photos.google.com':
         raise CookieError()
 
     link = r.headers.get('link')
-    auto_login_flag = r.headers.get('x-auto-login')
-    if link is not None and auto_login_flag is None:
+    if link is not None:
         raise CookieError()
 
     set_cookie = r.headers.get('set-cookie')
