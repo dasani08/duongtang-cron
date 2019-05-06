@@ -109,7 +109,8 @@ def get_cookie(cookie_str):
         raise CookieError()
 
     link = r.headers.get('link')
-    if link is not None:
+    auto_login_flag = r.headers.get('x-auto-login')
+    if link is not None and auto_login_flag is None:
         raise CookieError()
 
     set_cookie = r.headers.get('set-cookie')
