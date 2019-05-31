@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 import logging
 import threading
@@ -83,7 +84,7 @@ def serialize_cookie(cookie_dict):
 
 def get_cookie(cookie_str):
 
-    LOGGER.info("[{}] Getting cookie".format(threading.current_thread().name))
+    LOGGER.info("Getting cookie for: {}".format(cookie_str))
 
     request_url = 'https://photos.google.com/u/0/'
     r = requests.get(
@@ -96,6 +97,8 @@ def get_cookie(cookie_str):
         })
 
     if r.status_code != 200:
+        LOGGER.info("Google responses with status code {} for cookie {}".format(
+            r.status_code, cookie_str))
         return None, None
 
     """
@@ -106,14 +109,23 @@ def get_cookie(cookie_str):
     location = r.headers.get('content-location')
     if location is not None and \
             location.strip('/') != 'http://photos.google.com':
+        LOGGER.info("Google responses headers with content-location: {} for "
+                    "cookie: {"
+                    "}".format(location, cookie_str))
         raise CookieError()
 
     link = r.headers.get('link')
     if link is not None:
+        LOGGER.info("Google responses headers with link: {} for cookie {"
+                    "}".format(
+            link, cookie_str))
         raise CookieError()
 
     set_cookie = r.headers.get('set-cookie')
     if set_cookie is None:
+        LOGGER.info("Google responses headers without \"set-cookie\""
+                    "for "
+                    "cookie: {}".format(cookie_str))
         return None, None
 
     set_cookie_dict = parse_cookie(set_cookie)
@@ -124,6 +136,8 @@ def get_cookie(cookie_str):
     for key in set_cookie_dict.keys():
         if key in cookie_dict:
             cookie_dict[key] = set_cookie_dict[key]
+
+    LOGGER.info("New cookie found: {}".format(json.dumps(set_cookie_dict)))
 
     return (serialize_cookie(cookie_dict), expires)
 
