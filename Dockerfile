@@ -18,6 +18,7 @@ RUN apk add --virtual .build-deps \
     && apk del .build-deps
 
 COPY app.py /app/app.py
+COPY clean_up_stream.py /app/clean_up_stream.py
 COPY crons /etc/crontabs/root
 CMD chown root:root /etc/crontabs/root
 CMD ["crond", "-f"]
