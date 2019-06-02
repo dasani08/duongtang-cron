@@ -74,13 +74,9 @@ class Stream(Base):
 def execute():
     try:
         one_hour_ago = datetime.now() - timedelta(hours=1)
-        streams = session.query(Stream).filter(Stream.created_date <
+        session.query(Stream).filter(Stream.created_date <
                                       one_hour_ago).filter_by(
-            result=None).limit(100)
-        for stream in streams:
-            LOGGER.info('Delete stream id={} source_id={}'.format(stream.id,
-                                                                  stream.source_id))
-            session.query(Stream).filter_by(id=stream.id).delete()
+            result=None).delete()
         session.commit()
     except SQLAlchemyError as exc:
         LOGGER.info('Have an error when deleting streams: {}'.format(exc))
