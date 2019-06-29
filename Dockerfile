@@ -7,14 +7,14 @@ RUN apk update && apk add tzdata &&\
     echo "Asia/Ho_Chi_Minh" > /etc/timezone &&\ 
     apk del tzdata && rm -rf /var/cache/apk/*
 
-COPY requirement.txt requirement.txt
+COPY requirements.txt requirements.txt
 RUN apk add --virtual .build-deps \
     gcc \
     musl-dev \
     libffi-dev \
     openssl-dev \
     && pip install cryptography==2.2.2 \ 
-    && pip install --no-cache-dir -r requirement.txt \
+    && pip install --no-cache-dir -r requirements.txt \
     && apk del .build-deps
 
 COPY app.py /app/app.py
