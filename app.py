@@ -14,7 +14,7 @@ from sqlalchemy.ext.declarative import declarative_base
 """
 Logging configuration
 """
-LOG_FORMAT = ('%(levelname) -10s %(asctime)s %(name) -30s %(funcName) '
+LOG_FORMAT = ('%(levelname) -10s %(asctime)s %(funcName) '
               '-35s %(lineno) -5d: %(message)s')
 LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ env = os.environ
 SQLALCHEMY_DATABASE_URI = env.get(
     'SQLALCHEMY_DATABASE_URI',
     'mysql+pymysql://root:duongtang2019@127.0.0.1/duongtang?charset=utf8')
-SQLALCHEMY_POOL_RECYCLE = env.get('SQLALCHEMY_POOL_RECYCLE', 500)
+SQLALCHEMY_POOL_RECYCLE = int(env.get('SQLALCHEMY_POOL_RECYCLE', 500))
 
 
 # Factory method returning a db session scoped
@@ -82,9 +82,9 @@ def serialize_cookie(cookie_dict):
     return ';'.join(cookies)
 
 
-def get_cookie(cookie_str):
+def get_cookie(email, cookie_str):
 
-    LOGGER.info("Getting cookie for: {}".format(cookie_str))
+    LOGGER.info("Getting new cookie for: {}, {}".format(email, cookie_str))
 
     request_url = 'https://photos.google.com/u/0/'
     r = requests.get(
@@ -97,8 +97,8 @@ def get_cookie(cookie_str):
         })
 
     if r.status_code != 200:
-        LOGGER.info("Google responses with status code {} for cookie {}".format(
-            r.status_code, cookie_str))
+        LOGGER.info("Responses with error status code: {}. Stopped".format(
+            r.status_code))
         return None, None
 
     """
@@ -109,23 +109,18 @@ def get_cookie(cookie_str):
     location = r.headers.get('content-location')
     if location is not None and \
             location.strip('/') != 'http://photos.google.com':
-        LOGGER.info("Google responses headers with content-location: {} for "
-                    "cookie: {"
-                    "}".format(location, cookie_str))
+        LOGGER.info("A \"content-location\" key was found in responsed "
+                    "headers: {}".format(location))
         raise CookieError()
 
     link = r.headers.get('link')
     if link is not None:
-        LOGGER.info("Google responses headers with link: {} for cookie {"
-                    "}".format(
-            link, cookie_str))
+        LOGGER.info("A \"link\" key was found in responsed headers: {}".format(link))
         raise CookieError()
 
     set_cookie = r.headers.get('set-cookie')
     if set_cookie is None:
-        LOGGER.info("Google responses headers without \"set-cookie\""
-                    "for "
-                    "cookie: {}".format(cookie_str))
+        LOGGER.info("No responsed cookies found")
         return None, None
 
     set_cookie_dict = parse_cookie(set_cookie)
@@ -146,7 +141,8 @@ def refresh_cookie(cookies):
     with concurrent.futures.ThreadPoolExecutor(
             max_workers=None, thread_name_prefix="duongtang") as thread_pool:
         future_to_cookie = {thread_pool.submit(
-            get_cookie, cookie.value): cookie.group for cookie in cookies}
+            get_cookie, cookie.group, cookie.value): cookie.group for cookie
+                            in cookies}
         for future in concurrent.futures.as_completed(future_to_cookie):
             email = future_to_cookie[future]
             try:
@@ -158,10 +154,7 @@ def refresh_cookie(cookies):
                         'status': Config.INACTIVE_STATUS
                     })
             else:
-                if refreshed_cookie is None:
-                    LOGGER.info(
-                        'No refreshed cookie for email: {}'.format(email))
-                else:
+                if refreshed_cookie is not None:
                     session.query(Config).filter_by(
                         group=email, key='GMAIL_COOKIE').update({
                             'value': refreshed_cookie,
@@ -177,8 +170,7 @@ def execute_refresh():
     PAGE_SIZE = 1
     next_hour = datetime.now() + timedelta(hours=1)
     cookies = session.query(Config).filter_by(
-        key='GMAIL_COOKIE',
-        status=Config.ACTIVE_STATUS).filter(
+        key='GMAIL_COOKIE').filter(
         (Config.expires == None) | (Config.expires < next_hour.timestamp())
     ).order_by(
         Config.expires.asc()
