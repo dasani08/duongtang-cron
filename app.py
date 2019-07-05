@@ -2,13 +2,13 @@ import os
 import json
 import requests
 import logging
-import threading
+import re
 import concurrent.futures
 from time import time
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, timedelta
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy import create_engine
-from sqlalchemy import Column, Integer, String, Text, DateTime, Date
+from sqlalchemy import Column, Integer, String, Text, DateTime, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 
 """
@@ -66,8 +66,45 @@ class Config(Base):
     expires = Column(Integer, nullable=True)
 
 
+def utc_to_timestamp(utc):
+    try:
+        dt = datetime.strptime(utc, '%a, %d-%b-%Y %H:%M:%S %Z')
+        return int(dt.timestamp())
+    except ValueError:
+        return None
+
+
+def replace_utc_datetime(from_str):
+    utc_datetime_re = re.compile(
+        "\w{3}\,\s?\d{2}-\w{3}-\d{4}\s\d{2}:\d{2}:\d{2}\s\w{3}")
+    matches = utc_datetime_re.findall(from_str)
+    for match in matches:
+        timestamp = utc_to_timestamp(match)
+        if timestamp:
+            from_str = from_str.replace(match, str(timestamp))
+    return from_str
+
+
 def parse_cookie(cookie_str):
+    cookies = cookie_str.split(',')
+    cookie_list = []
+    for cookie in cookies:
+        parts = cookie.split(';')
+        (name, value) = parts[0].split('=', maxsplit=1)
+        cookie_dict = {
+            'name': name, 'value': value
+        }
+        for part in parts[1:]:
+            part = part.split('=')
+            cookie_dict[part[0].strip()] = part[1].strip() if len(
+                part) > 1 else None
+        cookie_list.append(cookie_dict)
+    return cookie_list
+
+
+def parse_cookie_to_dict(cookie_str):
     cookies = dict()
+    cookie_str = cookie_str.strip(';')
     for cookie in cookie_str.split(';'):
         cookie = cookie.split('=', maxsplit=1)
         cookies[cookie[0].strip()] = cookie[1].strip() if len(
@@ -84,7 +121,7 @@ def serialize_cookie(cookie_dict):
 
 def get_cookie(email, cookie_str):
 
-    LOGGER.info("Getting new cookie for: {}, {}".format(email, cookie_str))
+    LOGGER.info("[{}] Requesting new cookie: {}".format(email, cookie_str))
 
     request_url = 'https://photos.google.com/u/0/'
     r = requests.get(
@@ -97,9 +134,9 @@ def get_cookie(email, cookie_str):
         })
 
     if r.status_code != 200:
-        LOGGER.info("Responses with error status code: {}. Stopped".format(
-            r.status_code))
-        return None, None
+        LOGGER.info("[{}] Request error: {}. Stopped".format(email,
+                                                             r.status_code))
+        return None
 
     """
     If the cookie is not authenticated, google will response with login url
@@ -108,33 +145,31 @@ def get_cookie(email, cookie_str):
     """
     location = r.headers.get('content-location')
     if location is not None and \
-            location.strip('/') != 'http://photos.google.com':
-        LOGGER.info("A \"content-location\" key was found in responsed "
-                    "headers: {}".format(location))
+            location.strip('/') != 'https://photos.google.com/u/0':
+        LOGGER.info("[{}] Error location: {}".format(email, location))
         raise CookieError()
 
     link = r.headers.get('link')
     if link is not None:
-        LOGGER.info("A \"link\" key was found in responsed headers: {}".format(link))
+        LOGGER.info("[{}] Error link: {}".format(email, link))
         raise CookieError()
 
-    set_cookie = r.headers.get('set-cookie')
-    if set_cookie is None:
-        LOGGER.info("No responsed cookies found")
-        return None, None
+    responded_cookie_str = r.headers.get('set-cookie')
+    if responded_cookie_str is None:
+        LOGGER.info("[{}] No cookie".format(email))
+        raise CookieError()
 
-    set_cookie_dict = parse_cookie(set_cookie)
-    cookie_dict = parse_cookie(cookie_str)
-    expires = datetime.strptime(
-        set_cookie_dict['expires'], '%a, %d-%b-%Y %H:%M:%S %Z')
+    responded_cookie_str = replace_utc_datetime(responded_cookie_str)
+    responded_cookie = parse_cookie(responded_cookie_str)
+    cookie_dict = parse_cookie_to_dict(cookie_str)
 
-    for key in set_cookie_dict.keys():
-        if key in cookie_dict:
-            cookie_dict[key] = set_cookie_dict[key]
+    for cookie in responded_cookie:
+        cookie_dict[cookie['name']] = cookie['value']
 
-    LOGGER.info("New cookie found: {}".format(json.dumps(set_cookie_dict)))
+    LOGGER.info("[{}] New cookie: {}".format(email, serialize_cookie(
+        cookie_dict)))
 
-    return (serialize_cookie(cookie_dict), expires)
+    return serialize_cookie(cookie_dict)
 
 
 def refresh_cookie(cookies):
@@ -146,7 +181,7 @@ def refresh_cookie(cookies):
         for future in concurrent.futures.as_completed(future_to_cookie):
             email = future_to_cookie[future]
             try:
-                (refreshed_cookie, expires) = future.result()
+                refreshed_cookie = future.result()
             except CookieError:
                 LOGGER.info('Cookie of email {} is not valid'.format(email))
                 session.query(Config).filter_by(
@@ -157,24 +192,19 @@ def refresh_cookie(cookies):
                 if refreshed_cookie is not None:
                     session.query(Config).filter_by(
                         group=email, key='GMAIL_COOKIE').update({
-                            'value': refreshed_cookie,
-                            'expires': expires.timestamp()
+                            'value': refreshed_cookie
                         })
                     LOGGER.info(
-                        'Refreshing cookie for email {} completed'.format(
-                            email))
+                        '[{}] Refreshing cookie completed'.format(email))
         session.commit()
 
 
 def execute_refresh():
-    PAGE_SIZE = 1
-    next_hour = datetime.now() + timedelta(hours=1)
+    page_size = 100
     cookies = session.query(Config).filter_by(
-        key='GMAIL_COOKIE').filter(
-        (Config.expires == None) | (Config.expires < next_hour.timestamp())
-    ).order_by(
-        Config.expires.asc()
-    ).limit(PAGE_SIZE).with_for_update().all()
+        key='GMAIL_COOKIE').order_by(
+        Config.updated_date.asc()
+    ).limit(page_size).with_for_update().all()
 
     if len(cookies) == 0:
         LOGGER.info('All cookie was updated')

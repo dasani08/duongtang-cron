@@ -1,2 +1,2 @@
-0	*	*	*	*	python /app/app.py
+*/30	*	*	*	*	python /app/app.py
 5	*	*	*	*	python /app/clean_up_stream.py
