@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy import create_engine
-from sqlalchemy import Column, Integer, String, Text, DateTime, Date
+from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -73,9 +73,9 @@ class Stream(Base):
 
 def execute():
     try:
-        one_hour_ago = datetime.now() - timedelta(hours=1)
+        one_hour_ago = datetime.utcnow() - timedelta(hours=1)
         session.query(Stream).filter(Stream.created_date <
-                                      one_hour_ago).filter_by(
+                                     one_hour_ago).filter_by(
             result=None).delete()
         session.commit()
     except SQLAlchemyError as exc:
@@ -86,7 +86,7 @@ def execute():
 def main():
     ts = time()
     execute()
-    LOGGER.info('Took {}'.format(time()-ts))
+    LOGGER.info('Took {}'.format(time() - ts))
 
 
 if __name__ == '__main__':
