@@ -109,12 +109,16 @@ def execute(report_date):
                 date=the_date).first()
 
             if report is None:
-                session.merge(ReportEarning(
+                report = ReportEarning(
                     date=date_to_int(report_date),
                     total_req=total_req,
                     total_earn=total_earn
-                ))
-                session.commit()
+                )
+            else:
+                report.total_req = total_req
+                report.total_earn = total_earn
+            session.add(report)
+            session.commit()
     except SQLAlchemyError as exc:
         session.rollback()
         LOGGER.info('Error: {}', exc)
