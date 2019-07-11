@@ -108,6 +108,9 @@ def execute(report_date):
             report = session.query(ReportEarning).filter_by(
                 date=the_date).first()
 
+            total_req = total_req if total_req else 0
+            total_earn = total_earn if total_earn else 0
+
             if report is None:
                 report = ReportEarning(
                     date=date_to_int(report_date),
