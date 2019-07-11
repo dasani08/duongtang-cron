@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, \
     BigInteger
 from sqlalchemy.sql.functions import sum, count
-from sqlalchemy.sql.expression import cast
+from sqlalchemy.sql.expression import cast, or_
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
@@ -44,14 +44,13 @@ SQLAlchemy model
 Base = declarative_base()
 
 
-class UserBalance(Base):
-    __tablename__ = 'user_balance'
+class BalanceLog(Base):
+    __tablename__ = 'balance_logs'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False)
     transaction_timestamp = Column(BigInteger, nullable=False)
-    before_balance = Column(Integer, nullable=True, default=0)
-    current_balance = Column(Integer, nullable=False)
+    balance = Column(Integer, nullable=True, default=0)
     transaction_type = Column(String(32), nullable=True, default='VIEW')
     source_id = Column(String(255), nullable=True)
 
@@ -70,7 +69,7 @@ class ReportEarning(Base):
 
 def timestamp_range(the_date=None):
     if the_date is None:
-        the_date = datetime.now()
+        the_date = datetime.utcnow()
     begin_of_day = datetime(the_date.year, the_date.month, the_date.day)
     begin_of_day = datetime.timestamp(begin_of_day)
     end_of_day = begin_of_day + 86400
@@ -91,14 +90,17 @@ def execute(report_date):
         LOGGER.info('Gathering earning report for {}'.format(report_date))
         (start, end) = timestamp_range(report_date)
 
-        result = session.query(UserBalance).with_entities(
-            count(UserBalance.id).label('total_req'), cast((sum(
-                UserBalance.before_balance) - sum(UserBalance.current_balance)),
-                                                           Integer).label(
-                'total_earn')).filter(UserBalance.transaction_type == 'VIEW',
-                                      UserBalance.transaction_timestamp >= start,
-                                      UserBalance.transaction_timestamp <=
-                                      end).one_or_none()
+        result = session.query(BalanceLog).with_entities(
+            count(BalanceLog.id).label('total_req'),
+            cast((sum(BalanceLog.balance) * -1), Integer).label('total_earn')
+        ).filter(
+            or_(
+                BalanceLog.transaction_type == 'VIEW',
+                BalanceLog.transaction_type == 'UPLOAD_PHOTO'
+            ),
+            BalanceLog.transaction_timestamp >= start,
+            BalanceLog.transaction_timestamp <= end
+        ).one_or_none()
 
         if result is not None:
             (total_req, total_earn) = result
