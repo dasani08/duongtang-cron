@@ -29,6 +29,7 @@ SQLALCHEMY_DATABASE_URI = env.get(
     'SQLALCHEMY_DATABASE_URI',
     'mysql+pymysql://root:duongtang2019@127.0.0.1/duongtang?charset=utf8')
 SQLALCHEMY_POOL_RECYCLE = int(env.get('SQLALCHEMY_POOL_RECYCLE', 500))
+MAX_UPDATED_STREAM = int(env.get('MAX_UPDATED_STREAM', 100))
 
 
 # Factory method returning a db session scoped
@@ -137,7 +138,7 @@ def get_streams():
     return session.query(Stream).filter(or_(
         Stream.updated_meta==False,
         Stream.updated_meta == None
-    )).limit(100).all()
+    )).limit(MAX_UPDATED_STREAM).all()
 
 
 def execute():
