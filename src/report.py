@@ -62,8 +62,14 @@ class ReportEarning(Base):
     date = Column(Integer, nullable=False)
     total_req = Column(Integer, nullable=False, default=0)
     total_earn = Column(Integer, nullable=False, default=0)
+    total_view = Column(Integer, nullable=False, default=0)
+    total_view_earn = Column(Integer, nullable=False, default=0)
+    total_upload = Column(Integer, nullable=False, default=0)
+    total_upload_earn = Column(Integer, nullable=False, default=0)
+    total_export = Column(Integer, nullable=False, default=0)
+    total_export_earn = Column(Integer, nullable=False, default=0)
     created_date = Column(DateTime, nullable=True,
-        default=datetime.utcnow)
+                          default=datetime.utcnow)
     updated_date = Column(DateTime, onupdate=datetime.utcnow)
 
 
@@ -81,7 +87,7 @@ def timestamp_range(the_date=None):
 
 def date_to_int(date):
     the_date = '{}{}{}'.format(date.year, str(date.month).rjust(2, '0'),
-                           str(date.day).rjust(2, '0'))
+                               str(date.day).rjust(2, '0'))
     return int(the_date)
 
 
@@ -90,38 +96,49 @@ def execute(report_date):
         LOGGER.info('Gathering earning report for {}'.format(report_date))
         (start, end) = timestamp_range(report_date)
 
-        result = session.query(BalanceLog).with_entities(
+        results = session.query(BalanceLog).with_entities(
+            BalanceLog.transaction_type,
             count(BalanceLog.id).label('total_req'),
             cast((sum(BalanceLog.balance) * -1), Integer).label('total_earn')
         ).filter(
-            or_(
-                BalanceLog.transaction_type == 'VIEW',
-                BalanceLog.transaction_type == 'UPLOAD_PHOTO'
-            ),
+            BalanceLog.transaction_type.in_(
+                ['VIEW', 'UPLOAD_PHOTO', 'EXPORT_DRIVE']),
             BalanceLog.transaction_timestamp >= start,
             BalanceLog.transaction_timestamp <= end
-        ).one_or_none()
+        ).group_by(BalanceLog.transaction_type).all()
 
-        if result is not None:
-            (total_req, total_earn) = result
-            the_date = date_to_int(report_date)
-            report = session.query(ReportEarning).filter_by(
-                date=the_date).first()
+        the_date = date_to_int(report_date)
+        report = session.query(ReportEarning).filter_by(
+            date=the_date).first()
 
-            total_req = total_req if total_req else 0
-            total_earn = total_earn if total_earn else 0
+        if report is None:
+            report = ReportEarning(
+                date=date_to_int(report_date),
+                total_req=0,
+                total_earn=0,
+                total_view=0,
+                total_view_earn=0,
+                total_upload=0,
+                total_upload_earn=0,
+                total_export=0,
+                total_export_earn=0
+            )
 
-            if report is None:
-                report = ReportEarning(
-                    date=date_to_int(report_date),
-                    total_req=total_req,
-                    total_earn=total_earn
-                )
-            else:
-                report.total_req = total_req
-                report.total_earn = total_earn
-            session.add(report)
-            session.commit()
+        for result in results:
+            (type, req, earn) = result
+            if type == 'VIEW':
+                report.total_view = req
+                report.total_view_earn = earn
+            if type == 'UPLOAD_PHOTO':
+                report.total_upload = req
+                report.total_upload_earn = earn
+            if type == 'EXPORT_DRIVE':
+                report.total_export = req
+                report.total_export_earn = earn
+            report.total_req += req
+            report.total_earn += earn
+        session.add(report)
+        session.commit()
     except SQLAlchemyError as exc:
         session.rollback()
         LOGGER.info('Error: {}', exc)
@@ -133,7 +150,7 @@ def main():
         datetime.now().date() - timedelta(days=1)
     ts = time()
     execute(report_date)
-    LOGGER.info('Took {}'.format(time()-ts))
+    LOGGER.info('Took {}'.format(time() - ts))
 
 
 if __name__ == '__main__':

@@ -1,14 +1,13 @@
 import os
-import json
 import requests
 import logging
 import re
 import concurrent.futures
 from time import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy import create_engine
-from sqlalchemy import Column, Integer, String, Text, DateTime, BigInteger
+from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 
 """
@@ -177,7 +176,7 @@ def refresh_cookie(cookies):
             max_workers=None, thread_name_prefix="duongtang") as thread_pool:
         future_to_cookie = {thread_pool.submit(
             get_cookie, cookie.group, cookie.value): cookie.group for cookie
-                            in cookies}
+            in cookies}
         for future in concurrent.futures.as_completed(future_to_cookie):
             email = future_to_cookie[future]
             try:

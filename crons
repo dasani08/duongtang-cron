@@ -1,3 +1,0 @@
-*/30	*	*	*	*	python /app/app.py
-5       0	*	*	*	python /app/report_earning.py
-*/5     *	*	*	*	python /app/update_drive_info.py
