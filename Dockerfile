@@ -26,7 +26,3 @@ RUN chmod a+x ./start.sh
 
 # exectute start up script
 ENTRYPOINT ["./start.sh"]
-
-# COPY crons /etc/crontabs/root
-# CMD chown root:root /etc/crontabs/root
-# CMD ["crond", "-f"]
