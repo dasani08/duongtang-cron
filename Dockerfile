@@ -20,6 +20,7 @@ RUN apk add --virtual .build-deps \
 ENV APP_DIR /app
 WORKDIR ${APP_DIR}
 
+ADD VERSION .
 COPY . .
 
 RUN chmod a+x ./start.sh
