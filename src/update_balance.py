@@ -55,7 +55,7 @@ def update_user_balance(user_id, balance, last_id):
                 balance=0,
                 user_id=user_id
             )
-        curr_balance.balance = balance
+        curr_balance.balance = curr_balance.balance + balance
         curr_balance.last_id = last_id
         session.add(curr_balance)
         session.commit()

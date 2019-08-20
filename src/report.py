@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, \
     BigInteger
 from sqlalchemy.sql.functions import sum, count
-from sqlalchemy.sql.expression import cast, or_
+from sqlalchemy.sql.expression import cast
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
